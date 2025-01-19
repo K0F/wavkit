@@ -56,9 +56,9 @@ The program is controlled via command-line arguments:
 
 * To run the Recorder:
 ```
-        ./screen_recorder record <filename>: Records mouse movements and keystrokes to a WAV file.
-        ./screen_recorder play <filename>: Plays back a WAV file, moving the mouse cursor and simulating key presses according to the recorded data.
-        ./screen_recorder listen: Enters listen mode, processing audio input to control the mouse cursor and simulate key presses.
+        ./wavkit record <filename>: Records mouse movements and keystrokes to a WAV file.
+        ./wavkit play <filename>: Plays back a WAV file, moving the mouse cursor and simulating key presses according to the recorded data.
+        ./wavkit listen: Enters listen mode, processing audio input to control the mouse cursor and simulate key presses.
 ```
 * To stop Recording/Playback/Listening: Press Ctrl+C to stop.
 
