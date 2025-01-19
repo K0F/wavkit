@@ -8,6 +8,7 @@ _A tool for converting mouse movements and keystrokes to audio and back using FM
 * **FM Modulation:** Encodes mouse X and Y coordinates as an FM signal.  The carrier frequency and modulation index are configurable.
 * **PCM WAV Encoding:** Encodes the modulated audio signal as a PCM WAV file.  Sample rate and bit depth are configurable.
 * **Listen Mode:**  Plays back the recorded audio file and repeats original instructions.
+* **Mono WAV output** All the frequencies are stored in MONO sound... of course you can already think of STEREO giving more options.
 
 ## Dependencies
 
