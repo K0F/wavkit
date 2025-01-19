@@ -29,7 +29,7 @@ _A tool for converting mouse movements and keystrokes to audio and back using FM
 No autotools there, mostly ALSA and X11 dev packages, sorry WIP.
 
 ```bash
-	make
+make
 ```
 
 ## Description
@@ -45,13 +45,31 @@ WavKit records mouse movements and keystrokes as FM-modulated audio signals and 
 - GCC compiler
 - Make
 
-On Arch Linux, install dependencies with:
-```bash
-sudo pacman -S libx11 libxtst base-devel
-```
+* **Debian/Ubuntu:** `sudo apt update && sudo apt install libx11-dev libsndfile1-dev libasound2-dev libxtst-dev`
+* **Fedora/RHEL:** `sudo dnf install xorg-x11-devel sndfile-devel alsa-lib-devel libXtst-devel`
+* **Arch Linux:** `sudo pacman -S xorg-server libsndfile alsa-lib libxtst`
 
-On Debian like systems:
+## Usage
 
+The program is controlled via command-line arguments:
+
+* To run the Recorder:
 ```
-sudo apt install libx11-dev libsndfile1-dev libportaudio2-dev # Or libsdl2-dev instead of libportaudio2-dev
+        ./screen_recorder record <filename>: Records mouse movements and keystrokes to a WAV file.
+        ./screen_recorder play <filename>: Plays back a WAV file, moving the mouse cursor and simulating key presses according to the recorded data.
+        ./screen_recorder listen: Enters listen mode, processing audio input to control the mouse cursor and simulate key presses.
 ```
+* To stop Recording/Playback/Listening: Press Ctrl+C to stop.
+
+## Configuration
+
+    Sample Rate: Currently fixed at 44100 Hz (configurable in main.c).
+    Carrier Frequencies: Defined in main.c (FREQ_X, FREQ_Y, FREQ_KEYS). These determine the frequencies used for encoding X, Y coordinates, and key presses respectively.
+
+## Contributing
+
+Contributions are welcome!
+
+## License
+
+[GPL 3.0](https://www.gnu.org/licenses/gpl-3.0.en.html#license-text)
