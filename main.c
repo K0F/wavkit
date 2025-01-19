@@ -300,28 +300,308 @@ int record_mode(const char *filename) {
     return 0;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <filename> <mode>\n", argv[0]);
-        fprintf(stderr, "Modes:\n");
-        fprintf(stderr, "  record    - Record mouse movement and keystrokes to WAV\n");
-        fprintf(stderr, "  playback  - Play WAV file and control mouse/keyboard\n");
+
+int listen_mode(void) {
+    Display *display = XOpenDisplay(NULL);
+    if (!display) {
+        fprintf(stderr, "Cannot open display\n");
         return 1;
     }
 
-    const char *filename = argv[1];
-    const char *mode = argv[2];
+    Screen *screen = DefaultScreenOfDisplay(display);
+    int screen_width = screen->width;
+    int screen_height = screen->height;
+    int refresh_rate = get_monitor_refresh_rate(display);
 
-    // Set up signal handling for Ctrl+C
+    snd_pcm_t *capture_handle;
+    if (setup_alsa_capture(&capture_handle) != 0) {
+        XCloseDisplay(display);
+        return 1;
+    }
+
+    AudioSample buffer[WINDOW_SIZE] = {0};
+    int last_x = screen_width / 2;
+    int last_y = screen_height / 2;
+    bool key_was_pressed = false;
+    double max_power_x = 0.0, max_power_y = 0.0, max_power_k = 0.0;
+
+    printf("Listening at %dHz refresh rate...\n", refresh_rate);
+    printf("Screen dimensions: %dx%d\n", screen_width, screen_height);
+    printf("Carrier frequencies: X=%.1fHz, Y=%.1fHz, Keys=%.1fHz\n", 
+           FREQ_X, FREQ_Y, FREQ_KEYS);
+
+    struct timespec last_update, current_time;
+    clock_gettime(CLOCK_MONOTONIC, &last_update);
+    double update_interval = 1.0 / refresh_rate;
+
+    while (running) {
+        int err = snd_pcm_readi(capture_handle, buffer, WINDOW_SIZE);
+        if (err < 0) {
+            if (err == -EPIPE) {
+                snd_pcm_prepare(capture_handle);
+                continue;
+            }
+            fprintf(stderr, "Read error: %s\n", snd_strerror(err));
+            break;
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+        double elapsed = (current_time.tv_sec - last_update.tv_sec) +
+                        (current_time.tv_nsec - last_update.tv_nsec) / 1e9;
+
+        if (elapsed >= update_interval) {
+            // Analyze frequencies
+            double power_x = 0.0, power_y = 0.0, power_k = 0.0;
+            
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                double t = (double)i / SAMPLE_RATE;
+                double sample = buffer[i].mono / 32767.0;
+                
+                power_x += sample * sin(2.0 * PI * FREQ_X * t);
+                power_y += sample * sin(2.0 * PI * FREQ_Y * t);
+                power_k += sample * sin(2.0 * PI * FREQ_KEYS * t);
+            }
+
+            // Normalize and process powers
+            power_x = fabs(power_x) / WINDOW_SIZE;
+            power_y = fabs(power_y) / WINDOW_SIZE;
+            power_k = fabs(power_k) / WINDOW_SIZE;
+
+            max_power_x = fmax(max_power_x, power_x);
+            max_power_y = fmax(max_power_y, power_y);
+            max_power_k = fmax(max_power_k, power_k);
+
+            if (max_power_x > 0.0) power_x /= max_power_x;
+            if (max_power_y > 0.0) power_y /= max_power_y;
+            if (max_power_k > 0.0) power_k /= max_power_k;
+
+            // Convert to screen coordinates
+            int x = (int)(power_x * screen_width);
+            int y = (int)(power_y * screen_height);
+            
+            x = (x + last_x * 7) / 8;
+            y = (y + last_y * 7) / 8;
+            
+            x = x < 0 ? 0 : (x >= screen_width ? screen_width - 1 : x);
+            y = y < 0 ? 0 : (y >= screen_height ? screen_height - 1 : y);
+
+            if (power_x > 0.1 || power_y > 0.1) {
+                XWarpPointer(display, None, DefaultRootWindow(display), 
+                            0, 0, 0, 0, x, y);
+            }
+
+            bool key_pressed = (power_k > 0.5);
+            if (key_pressed != key_was_pressed) {
+                XTestFakeKeyEvent(display, 65, key_pressed, 0);
+                key_was_pressed = key_pressed;
+            }
+
+            XFlush(display);
+            
+            last_x = x;
+            last_y = y;
+            last_update = current_time;
+
+            printf("\rX: %4d (%.3f)  Y: %4d (%.3f)  Key: %.3f   ", 
+                   x, power_x, y, power_y, power_k);
+            fflush(stdout);
+        }
+    }
+
+    if (key_was_pressed) {
+        XTestFakeKeyEvent(display, 65, False, 0);
+        XFlush(display);
+    }
+
+    snd_pcm_close(capture_handle);
+    XCloseDisplay(display);
+    return 0;
+}
+
+X11 refresh rate typically matches your monitor’s refresh rate. Let’s query it and use that for our update rate. Also, I’ll add the listen mode. Here’s the improved version:
+
+// Add to the top with other includes
+#include <X11/extensions/Xrandr.h>
+#include <alsa/asoundlib.h>
+
+// Function to get monitor refresh rate
+int get_monitor_refresh_rate(Display *display) {
+    XRRScreenConfiguration *conf = XRRGetScreenInfo(display, DefaultRootWindow(display));
+    short rate = XRRConfigCurrentRate(conf);
+    XRRFreeScreenConfigInfo(conf);
+    return rate > 0 ? rate : 60;  // fallback to 60Hz if query fails
+}
+
+// ALSA setup function
+int setup_alsa_capture(snd_pcm_t **capture_handle) {
+    int err;
+    if ((err = snd_pcm_open(capture_handle, "default", SND_PCM_STREAM_CAPTURE, 0)) < 0) {
+        fprintf(stderr, "Cannot open audio device: %s\n", snd_strerror(err));
+        return 1;
+    }
+
+    snd_pcm_hw_params_t *hw_params;
+    snd_pcm_hw_params_malloc(&hw_params);
+    snd_pcm_hw_params_any(*capture_handle, hw_params);
+    snd_pcm_hw_params_set_access(*capture_handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
+    snd_pcm_hw_params_set_format(*capture_handle, hw_params, SND_PCM_FORMAT_S16_LE);
+    snd_pcm_hw_params_set_channels(*capture_handle, hw_params, 1);  // Mono
+    
+    unsigned int rate = SAMPLE_RATE;
+    snd_pcm_hw_params_set_rate_near(*capture_handle, hw_params, &rate, 0);
+    
+    snd_pcm_uframes_t buffer_size = WINDOW_SIZE;
+    snd_pcm_hw_params_set_buffer_size_near(*capture_handle, hw_params, &buffer_size);
+
+    if ((err = snd_pcm_hw_params(*capture_handle, hw_params)) < 0) {
+        fprintf(stderr, "Cannot set parameters: %s\n", snd_strerror(err));
+        snd_pcm_hw_params_free(hw_params);
+        return 1;
+    }
+
+    snd_pcm_hw_params_free(hw_params);
+    return 0;
+}
+
+int listen_mode(void) {
+    Display *display = XOpenDisplay(NULL);
+    if (!display) {
+        fprintf(stderr, "Cannot open display\n");
+        return 1;
+    }
+
+    Screen *screen = DefaultScreenOfDisplay(display);
+    int screen_width = screen->width;
+    int screen_height = screen->height;
+    int refresh_rate = get_monitor_refresh_rate(display);
+
+    snd_pcm_t *capture_handle;
+    if (setup_alsa_capture(&capture_handle) != 0) {
+        XCloseDisplay(display);
+        return 1;
+    }
+
+    AudioSample buffer[WINDOW_SIZE] = {0};
+    int last_x = screen_width / 2;
+    int last_y = screen_height / 2;
+    bool key_was_pressed = false;
+    double max_power_x = 0.0, max_power_y = 0.0, max_power_k = 0.0;
+
+    printf("Listening at %dHz refresh rate...\n", refresh_rate);
+    printf("Screen dimensions: %dx%d\n", screen_width, screen_height);
+    printf("Carrier frequencies: X=%.1fHz, Y=%.1fHz, Keys=%.1fHz\n", 
+           FREQ_X, FREQ_Y, FREQ_KEYS);
+
+    struct timespec last_update, current_time;
+    clock_gettime(CLOCK_MONOTONIC, &last_update);
+    double update_interval = 1.0 / refresh_rate;
+
+    while (running) {
+        int err = snd_pcm_readi(capture_handle, buffer, WINDOW_SIZE);
+        if (err < 0) {
+            if (err == -EPIPE) {
+                snd_pcm_prepare(capture_handle);
+                continue;
+            }
+            fprintf(stderr, "Read error: %s\n", snd_strerror(err));
+            break;
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &current_time);
+        double elapsed = (current_time.tv_sec - last_update.tv_sec) +
+                        (current_time.tv_nsec - last_update.tv_nsec) / 1e9;
+
+        if (elapsed >= update_interval) {
+            // Analyze frequencies
+            double power_x = 0.0, power_y = 0.0, power_k = 0.0;
+            
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                double t = (double)i / SAMPLE_RATE;
+                double sample = buffer[i].mono / 32767.0;
+                
+                power_x += sample * sin(2.0 * PI * FREQ_X * t);
+                power_y += sample * sin(2.0 * PI * FREQ_Y * t);
+                power_k += sample * sin(2.0 * PI * FREQ_KEYS * t);
+            }
+
+            // Normalize and process powers
+            power_x = fabs(power_x) / WINDOW_SIZE;
+            power_y = fabs(power_y) / WINDOW_SIZE;
+            power_k = fabs(power_k) / WINDOW_SIZE;
+
+            max_power_x = fmax(max_power_x, power_x);
+            max_power_y = fmax(max_power_y, power_y);
+            max_power_k = fmax(max_power_k, power_k);
+
+            if (max_power_x > 0.0) power_x /= max_power_x;
+            if (max_power_y > 0.0) power_y /= max_power_y;
+            if (max_power_k > 0.0) power_k /= max_power_k;
+
+            // Convert to screen coordinates
+            int x = (int)(power_x * screen_width);
+            int y = (int)(power_y * screen_height);
+            
+            x = (x + last_x * 7) / 8;
+            y = (y + last_y * 7) / 8;
+            
+            x = x < 0 ? 0 : (x >= screen_width ? screen_width - 1 : x);
+            y = y < 0 ? 0 : (y >= screen_height ? screen_height - 1 : y);
+
+            if (power_x > 0.1 || power_y > 0.1) {
+                XWarpPointer(display, None, DefaultRootWindow(display), 
+                            0, 0, 0, 0, x, y);
+            }
+
+            bool key_pressed = (power_k > 0.5);
+            if (key_pressed != key_was_pressed) {
+                XTestFakeKeyEvent(display, 65, key_pressed, 0);
+                key_was_pressed = key_pressed;
+            }
+
+            XFlush(display);
+            
+            last_x = x;
+            last_y = y;
+            last_update = current_time;
+
+            printf("\rX: %4d (%.3f)  Y: %4d (%.3f)  Key: %.3f   ", 
+                   x, power_x, y, power_y, power_k);
+            fflush(stdout);
+        }
+    }
+
+    if (key_was_pressed) {
+        XTestFakeKeyEvent(display, 65, False, 0);
+        XFlush(display);
+    }
+
+    snd_pcm_close(capture_handle);
+    XCloseDisplay(display);
+    return 0;
+}
+
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <command> [filename]\n", argv[0]);
+        fprintf(stderr, "Commands:\n");
+        fprintf(stderr, "  record <filename>  - Record mouse/keys to WAV\n");
+        fprintf(stderr, "  play <filename>    - Play WAV file as mouse/keys\n");
+        fprintf(stderr, "  listen            - Listen to audio input\n");
+        return 1;
+    }
+
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
 
-    if (strcmp(mode, "record") == 0) {
-        return record_mode(filename);
-    } else if (strcmp(mode, "playback") == 0) {
-        return playback_mode(filename);
+    if (strcmp(argv[1], "record") == 0 && argc == 3) {
+        return record_mode(argv[2]);
+    } else if (strcmp(argv[1], "play") == 0 && argc == 3) {
+        return playback_mode(argv[2]);
+    } else if (strcmp(argv[1], "listen") == 0) {
+        return listen_mode();
     } else {
-        fprintf(stderr, "Invalid mode: %s\n", mode);
+        fprintf(stderr, "Invalid command or missing filename\n");
         return 1;
     }
 }
