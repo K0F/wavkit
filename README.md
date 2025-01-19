@@ -5,7 +5,7 @@ _A tool for converting mouse movements and keystrokes to audio and back using FM
 ## Features
 
 * **X11 HID Capture:** Captures the HID user actions using the X11 library.  Currently only selects and captures the primary screen for user actions.  Multi-monitor support could be added.
-* **FM Modulation:** Encodes mouse X and Y coordinates as an FM signal.  The carrier frequency and modulation index are configurable. Other carrier is used for keystrokes.
+* **FM Modulation:** Encodes mouse X and Y coordinates as two separate FM signals.  The carrier frequency and modulation index are configurable. Other carrier is used for keystrokes. (mouseclick to be added)
 * **PCM WAV Encoding:** Encodes the modulated audio signal as a PCM WAV file.  Sample rate and bit depth are configurable.
 * **Listen Mode:**  Plays back the recorded audio file and repeats original instructions.
 * **Mono WAV output** All the frequencies are stored in MONO sound... of course you can already think of STEREO giving more options.
