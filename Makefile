@@ -1,7 +1,8 @@
 # Makefile for mouse recorder
 
 CC = gcc
-CFLAGS = -Wall -Wextra -pedantic -std=c99 -O2 -lX11 -lXtst -lasound -lm -lXrandr
+CFLAGS = -Wall -Wextra -pedantic -std=c99 -O2 -o wavkit -lX11 -lXtst -lXrandr -lasound -lm
+
 
 LDFLAGS = -lX11
 TARGET = wavkit
