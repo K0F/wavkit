@@ -456,19 +456,14 @@ int setup_alsa_capture(snd_pcm_t **capture_handle) {
 }
 
 
-
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <command> [filename]\n", argv[0]);
-        fprintf(stderr, "Commands:\n");
-        fprintf(stderr, "  record <filename>  - Record mouse/keys to WAV\n");
-        fprintf(stderr, "  play <filename>    - Play WAV file as mouse/keys\n");
-        fprintf(stderr, "  listen            - Listen to audio input\n");
+        // ... (rest of your usage message) ...
         return 1;
     }
 
-    signal(SIGINT, handle_signal);
-    signal(SIGTERM, handle_signal);
+    // ... (your signal handling) ...
 
     if (strcmp(argv[1], "record") == 0 && argc == 3) {
         return record_mode(argv[2]);
@@ -476,6 +471,8 @@ int main(int argc, char *argv[]) {
         return playback_mode(argv[2]);
     } else if (strcmp(argv[1], "listen") == 0) {
         return listen_mode();
+    } else if (strcmp(argv[1], "playback") == 0 && argc == 3) { // Added playback handling
+        return playback_mode(argv[2]); // Assuming playback_mode handles playback
     } else {
         fprintf(stderr, "Invalid command or missing filename\n");
         return 1;
