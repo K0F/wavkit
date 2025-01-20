@@ -8,6 +8,8 @@
 #include <X11/extensions/XTest.h>
 // Add to the top with other includes
 #include <X11/extensions/Xrandr.h>
+#include <alsa/asoundlib.h>
+
 #include <time.h>
 #include <errno.h>
 #include <signal.h>
@@ -29,6 +31,9 @@
 // Common monitor refresh rates
 #define X11_REFRESH_RATE 60  // Most common, can be 60, 75, 120, 144, etc.
 #define FRAME_TIME (1.0 / X11_REFRESH_RATE)
+
+
+
 
 
 typedef struct {
@@ -418,11 +423,6 @@ int listen_mode(void) {
     return 0;
 }
 
-X11 refresh rate typically matches your monitor’s refresh rate. Let’s query it and use that for our update rate. Also, I’ll add the listen mode. Here’s the improved version:
-
-// Add to the top with other includes
-#include <X11/extensions/Xrandr.h>
-#include <alsa/asoundlib.h>
 
 // Function to get monitor refresh rate
 int get_monitor_refresh_rate(Display *display) {
