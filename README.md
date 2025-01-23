@@ -2,6 +2,8 @@
 
 _A tool for converting mouse movements and keystrokes to audio and back using FM modulation._
 
+It is rather proof of concept than useful tool.
+
 ## Features
 
 * **X11 HID Capture:** Captures the HID user actions using the X11 library.  Currently only selects and captures the primary screen for user actions.  Multi-monitor support could be added.
